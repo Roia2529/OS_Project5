@@ -16,11 +16,13 @@
  *  sleepy_mutex - a mutex to protect the fields of this structure;
  *  cdev - ñharacter device structure.
  */
+
+#include <linux/wait.h>
 struct sleepy_dev {
   unsigned char *data;
   struct mutex sleepy_mutex; 
   struct cdev cdev;
   bool wakeflag;
-  struct wait_queue_head_t wait_queue;
+  wait_queue_head_t wait_queue;
 };
 #endif /* SLEEPY_H_1727_INCLUDED */

@@ -27,6 +27,7 @@
 #include <linux/cdev.h>
 #include <linux/device.h>
 #include <linux/mutex.h>
+#include <linux/sched.h>
 //
 #include <linux/param.h>
 #include <linux/jiffies.h>
@@ -149,7 +150,7 @@ sleepy_write(struct file *filp, const char __user *buf, size_t count,
   int start_jiffies = jiffies;
   mutex_unlock(&dev->sleepy_mutex);
 	
-  if(wait_event_interruptible_timeout(&dev->wait_queue,dev->wakeflag!=true,sleeping_second*HZ))
+  if(wait_event_interruptible_timeout(dev->wait_queue,dev->wakeflag!=true,sleeping_second*HZ))
   {
    //The HZ symbol specifies the number of clock ticks generated per second.
    //sleep until dev->wakeflag==0 	
@@ -159,10 +160,12 @@ sleepy_write(struct file *filp, const char __user *buf, size_t count,
   if(dev->wakeflag)//awaken by read
   {
     retval=sleeping_second-(jiffies-start_jiffies)/HZ;
+    dev->wakeflag = false;
   }
   else
   {
     retval = 0;
+    dev->wakeflag = false;
     goto end;
   }	
 
@@ -170,7 +173,7 @@ sleepy_write(struct file *filp, const char __user *buf, size_t count,
   end:		
   mutex_unlock(&dev->sleepy_mutex);
   return retval;
-  }
+  
 }
 
 loff_t 
@@ -207,10 +210,6 @@ sleepy_construct_device(struct sleepy_dev *dev, int minor,
   dev->data = NULL;     
   mutex_init(&dev->sleepy_mutex);
 
-  //initial queue and flag
-  dev->wakeflag = false;
-  init_waitqueue_head(&dev->wait_queue);
-    
   cdev_init(&dev->cdev, &sleepy_fops);
   dev->cdev.owner = THIS_MODULE;
     
@@ -233,6 +232,11 @@ sleepy_construct_device(struct sleepy_dev *dev, int minor,
     cdev_del(&dev->cdev);
     return err;
   }
+
+   //initial queue and flag
+  dev->wakeflag = false;
+  init_waitqueue_head(&dev->wait_queue);
+    
   return 0;
 }
 
