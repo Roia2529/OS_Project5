@@ -135,38 +135,45 @@ sleepy_write(struct file *filp, const char __user *buf, size_t count,
     printk(KERN_WARNING "Fail: Write %d bytes to device\n", (int)count );
       return -ENODEV; /* */
   }
-
+  
   if (mutex_lock_killable(&dev->sleepy_mutex))
     return -EINTR;
-
+  /*	
   if (copy_from_user(dev->data, buf, count) != 0){
     printk(KERN_WARNING "copy form user failed.\n");
     retval = -EFAULT;
     goto end;
   }
-  int sleeping_second = *(int*)dev->data;
+  */
+  //int sleeping_second = *(int*)dev->data;
+  int sleeping_second = (int) *buf;
   if(sleeping_second<0) goto end;
   
   int start_jiffies = jiffies;
   mutex_unlock(&dev->sleepy_mutex);
-	
-  if(wait_event_interruptible_timeout(dev->wait_queue,dev->wakeflag!=true,sleeping_second*HZ))
+	printk(KERN_INFO "start sleeping %d seconds.\n",sleeping_second);
+  int event_ret = wait_event_interruptible_timeout(dev->wait_queue,dev->wakeflag,sleeping_second*HZ);
+  //The HZ symbol specifies the number of clock ticks generated per second.
+  //sleep until dev->wakeflag==0 
+  mutex_lock(&dev->sleepy_mutex);
+  if(event_ret==0)
   {
-   //The HZ symbol specifies the number of clock ticks generated per second.
-   //sleep until dev->wakeflag==0 	
+    retval = 0;
+    dev->wakeflag = false;
+    goto end;	
   }
   //waken  
-  mutex_lock(&dev->sleepy_mutex);
-  if(dev->wakeflag)//awaken by read
+  else if(event_ret>0)//awaken by read
   {
-    retval=sleeping_second-(jiffies-start_jiffies)/HZ;
+    //retval=sleeping_second-(jiffies-start_jiffies)/HZ;
+    retval = event_ret/HZ; //remaining jiffies = event_ret
+    printk(KERN_INFO "Remain %d seconds.\n",retval);	
     dev->wakeflag = false;
   }
   else
   {
-    retval = 0;
-    dev->wakeflag = false;
-    goto end;
+   printk(KERN_DEBUG "Interrupted by a signal.\n");
+    retval = event_ret;  
   }	
 
   /* END YOUR CODE */
